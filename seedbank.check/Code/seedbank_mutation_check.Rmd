@@ -1,0 +1,193 @@
+---
+title: "seedbank_mutation_check"
+author: "Joy O'Brien"
+date: "2026-04-06"
+output: html_document
+---
+Goal: Determine if there are any mutations that arise in phage that coevolved with a non-sporulating host compared to a sporulating host; if entrapment is under strong genetic control then passaging on non sporulatio should relax selection on auxiliary sporulation elements
+```{r}
+# setwd
+setwd("~/GitHub/VirosporeQuant/seedbank.check")
+```
+
+
+0. Set theme
+```{r}
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+1. Load in data
+```{r}
+WLO.l1 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/WLO_L1_phage_long_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+WLO.l2 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/WLO_L2_phage_long_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+WLO.l3 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/WLO_L3_phage_long_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+
+SNO.l1 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/SNO_L1_phage_no_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+SNO.l2 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/SNO_L2_phage_no_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+SNO.l3 <- read.csv("~/GitHub/VirosporeQuant/seedbank.check/Data/SNO_L3_phage_no_seed_bank_SPO1_filtered_phage_annotated_timecourse.txt", header = TRUE)
+```
+
+
+2. Clean up and wrangle data
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+WLO.l1$Dataset <- "Spore.lysate1"
+WLO.l2$Dataset <- "Spore.lysate2"
+WLO.l3$Dataset <- "Spore.lysate3"
+SNO.l1$Dataset <- "Nonspore.lysate1"
+SNO.l2$Dataset <- "Nonspore.lysate2"
+SNO.l3$Dataset <- "Nonspore.lysate3"
+
+spore.mut <- bind_rows(WLO.l1, WLO.l2, WLO.l3)
+nonspore.mut <- bind_rows(SNO.l1, SNO.l2, SNO.l3)
+
+# Add labels for treatment
+spore.mut$Coevolve <- "Spore"
+nonspore.mut$Coevolve <- "Non-spore"
+
+all.mut <- bind_rows(spore.mut, nonspore.mut)
+
+# Reshape frequencies
+long.mut <- all.mut %>%
+  pivot_longer(
+    cols = starts_with("Freq."),
+    names_to = "Timepoint",
+    values_to = "Frequency"
+  )
+# Align mutations across treatments
+```
+
+
+```{r}
+#all_mut <- bind_rows(WLO.l1, WLO.l2, WLO.l3, SNO.l1, SNO.l2, SNO.l3)
+
+#all_mut_long <- all_mut %>%
+  # pivot_longer(
+  #   cols = starts_with("Freq."),
+  #   names_to = "Timepoint",
+  #   values_to = "Frequency"
+  # )
+```
+
+```{r}
+ggplot(all_mut_long, aes(x = Position, y = Frequency, color = Dataset)) +
+  geom_point(alpha = 0.6, size = 1.5) +
+  facet_wrap(~Timepoint, ncol = 1) +
+  theme_bw()
+```
+
+
+2. Plot
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+
+mut_summary <- long.mut %>%
+  group_by(Gene, Coevolve, Timepoint) %>%
+  summarize(
+    mean_freq = mean(Frequency, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+ggplot(long.mut, aes(x = Gene, y = Frequency, fill = Coevolve)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(
+    x = "Gene",
+    y = "Mutation Frequency",
+    fill = "Treatment"
+  )
+
+# Edit the order of frequency in the plot 
+mut_summary <- mut_summary %>%
+  mutate(
+    Timepoint = factor(Timepoint,
+                       levels = c("Freq.1","Freq.4","Freq.7","Freq.10","Freq.14"))
+  )
+# Gene locus that contain our elements of interest --> 0A and par-like elements
+ofinterest <- data.frame(
+  Gene = c("SPO1_55", "SPO1_136", "SPO1_97", "SPO1_141", "SPO1_160", "SPO101"))
+  #Element = c("ParB", "ParM", "0A_box", "0A_box", "0A_box", "0A_box")
+#)
+  
+ggplot(mut_summary, aes(x = Timepoint, y = Gene, fill = mean_freq)) +
+  geom_tile() +
+  facet_wrap(~Coevolve) +
+  scale_fill_viridis_c() + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+# Just realized the genes are actually locus tags
+```
+
+3. Plot specifically for elements we are interested in
+```{r}
+# Gene locus that contain our elements of interest --> 0A and par-like elements
+ofinterest <- data.frame(
+  Gene = c("SPO1_55", "SPO1_136", "SPO1_97", "SPO1_141", "SPO1_160", "SPO101"))
+  #Element = c("ParB", "ParM", "0A_box", "0A_box", "0A_box", "0A_box")
+#)
+
+# your long plotting dataframe
+# example columns: Gene, Timepoint, Treatment, Frequency
+mut_summary_int<- mut_summary_int %>%
+  mutate(is_ofinterest = Gene %in% ofinterest$Gene) %>%
+  mutate(
+    Gene_label = ifelse(
+      is_ofinterest,
+      paste0("<span style='color:red;'>", Gene, "</span>"),
+      Gene
+    )
+  )
+          
+
+ggplot(mut_summary_int, aes(x = Timepoint, y = Gene_label, fill = mean_freq)) +
+  geom_tile() +
+  facet_wrap(~Coevolve) +
+  scale_fill_viridis_c() + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(mut_summary_int, aes(x = Timepoint, y = Gene_label, fill = mean_freq)) +
+  geom_tile() 
+```
+4. Determine the location of the mutations within genes that carry 0A boxes
+```{r}
+
+
+```
+
