@@ -1,0 +1,124 @@
+---
+title: "Entrapment efficiency distribution"
+author: "Jay T. Lennon"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+   - \usepackage{array}
+output: pdf_document
+geometry: margin=2.54cm
+---
+
+## Clear workspace and set directory
+
+```{r setup}
+rm(list=ls())
+getwd()
+setwd("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant")
+```
+
+## Load packages and functions
+```{r}
+library("png")
+library("dplyr")
+library("grid")
+```
+
+## Load data
+```{r}
+ee <- read.csv("Data/entrapment.kernel.csv", stringsAsFactors = FALSE)
+```
+
+# Kernel density figure
+
+```{r}
+
+library(png)
+library(grid)
+
+png(
+  filename = "~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Figures/ee.kernel.png",
+  width = 1600,
+  height = 1200,
+  res = 150,
+  bg = "white"
+)
+
+par(
+  mar = c(7, 8, 3, 5),
+  mgp = c(5.5, 2.2, 0),
+  tcl = -0.8
+)
+
+## ---- Data cleanup ------------------------------------------------------
+x <- ee$EE.kernel
+x <- x[!is.na(x)]
+
+# Option A: do not artificially clamp the data unless you want to.
+# If you intentionally want to cap values above 125, use:
+# x <- pmin(pmax(x, 0), 125)
+
+# compute sensible plotting range from the data (add small buffer)
+x_min <- 0
+x_max_data <- max(x, na.rm = TRUE)
+x_max <- max(x_max_data, 130)   # ensure at least 130 for axis scale if you prefer
+
+## ---- Kernel density (extra smooth) ------------------------------------
+bw_base <- bw.SJ(x)
+bw_use  <- bw_base * 2.5     # smoother kernel
+
+d <- density(
+  x,
+  bw   = bw_use,
+  from = x_min,
+  to   = x_max,     # <- important: compute density out to x_max
+  n    = 4096
+)
+
+## ---- Axis limits and ticks --------------------------------------------
+xlim <- c(x_min, x_max)
+ylim <- c(0, max(d$y) * 1.05)
+
+x_at <- pretty(xlim, n = 6)
+y_at <- pretty(ylim, n = 5)
+
+## ---- Plot --------------------------------------------------------------
+col_main <- "#2E5F7F" # teal blue
+
+plot(
+  d,
+  main = "",
+  xlab = NA,
+  ylab = NA,
+  col  = col_main,
+  lwd  = 2.5,
+  cex.lab = 2,
+  las  = 2,
+  xaxt = "n",
+  yaxt = "n",
+  xlim = xlim,
+  ylim = ylim
+)
+
+## ---- Filled density ----------------------------------------------------
+polygon(
+  c(d$x, rev(d$x)),
+  c(d$y, rep(0, length(d$y))),
+  col = adjustcolor(col_main, alpha.f = 0.8),
+  border = NA
+)
+
+## ---- Axes and box ------------------------------------------------------
+box(lwd = 3)
+
+axis(1, at = x_at, cex.axis = 2.5, lwd = 2.5, lwd.ticks = 3)
+axis(2, at = y_at, las = 2, cex.axis = 2.5, lwd = 2, lwd.ticks = 3)
+
+axis(3, at = x_at, labels = FALSE, lwd = 2, lwd.ticks = 3)
+axis(4, at = y_at, labels = FALSE, lwd = 2, lwd.ticks = 3)
+
+dev.off()
+graphics.off()
+
+img <- readPNG("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Figures/ee.kernel.png")
+grid.raster(img)
+```
