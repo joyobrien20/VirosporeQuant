@@ -1,0 +1,476 @@
+---
+title: "response.surface.optimalentrap"
+output: html_document
+---
+
+Response surface analysis trial-- related to https://my.che.utah.edu/~tony/course/material/ExperimentalDesign/30_meth_of_steep_asc.php 
+
+0. Set wd and theme
+```{r}
+setwd("~/GitHub/VirosporeQuant/Optimal.entrap")
+```
+
+```{r}
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+1. Optimal entrapment analysis for SPO1 WT phage 
+```{r}
+library(readxl)
+opt <- read_excel("~/GitHub/VirosporeQuant/Optimal.entrap/Data/20260629_optimalentrapment_experiment_data_github.xlsx", sheet = "opt.e")
+```
+
+2. Visualize raw response surface
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Calculate entrapment efficiency from the data -- note that "corrected" values come from accounting for final volume of sample 
+opt <- opt %>%
+  mutate(
+    ee = (virospores.ml.corrected / (virospores.ml.corrected + spores.ml.corrected)) * 100
+  )
+# Include log10 MOI
+opt$log10_MOI <- log10(opt$MOI)
+
+# Plot
+ggplot(opt,
+       aes(x = Infection.time.h,
+           y = log10_MOI)) +
+  geom_point(aes(size = ee,
+                 fill = ee),
+             shape = 21,
+             color = "black") +
+  scale_fill_viridis_c() +
+  scale_y_continuous(
+    breaks = c(-1, 0, 1),
+    labels = c("0.1", "1", "10")
+  ) +
+  labs(
+    x = "Time of infection (h)",
+    y = "MOI",
+    fill = "Entrapment efficiency",
+    size = "Entrapment efficiency"
+  )
+
+```
+
+3. Fit a first-order surface 
+```{r}
+# Exploratory
+model_linear <- lm(
+  ee ~
+    Infection.time.h +
+    log10_MOI,
+  data = opt
+)
+
+summary(model_linear)
+
+# Include the interaction
+model_linear_int <- lm(
+  ee ~
+    Infection.time.h * log10_MOI,
+  data = opt
+)
+
+anova(model_linear, model_linear_int)
+summary(model_linear_int)
+```
+
+4. Fit a quadratic response surface model 
+```{r}
+# Center the factors 
+opt$time_c <- opt$Infection.time.h -
+  mean(opt$Infection.time.h, na.rm = TRUE)
+
+opt$logMOI_c <- opt$log10_MOI -
+  mean(opt$log10_MOI, na.rm = TRUE)
+
+# Fit model
+model_quad <- lm(
+  ee ~
+    time_c +
+    logMOI_c +
+    I(time_c^2) +
+    I(logMOI_c^2) +
+    time_c:logMOI_c,
+  data = opt
+)
+
+summary(model_quad)
+anova(model_linear_int, model_quad)
+
+# More appropriate model based on modeling the counts 
+model_entrapment <- glm(
+  cbind(virospores.ml, spores.ml) ~
+    time_c +
+    logMOI_c +
+    I(time_c^2) +
+    I(logMOI_c^2) +
+    time_c:logMOI_c,
+  family = quasibinomial,
+  data = opt
+)
+
+summary(model_entrapment)
+```
+5. Predict the optimum over the tested region
+```{r}
+prediction_grid <- expand.grid(
+  Infection.time.h = seq(
+    min(opt$Infection.time.h),
+    max(opt$Infection.time.h),
+    length.out = 200
+  ),
+  MOI = 10^seq(
+    log10(min(opt$MOI, na.rm = TRUE)),
+    log10(max(opt$MOI, na.rm = TRUE)),
+    length.out = 200
+  )
+)
+
+prediction_grid$time_c <-
+  prediction_grid$Infection.time.h -
+  mean(opt$Infection.time.h, na.rm = TRUE)
+
+prediction_grid$logMOI_c <-
+  log10(prediction_grid$MOI) -
+  mean(opt$log10_MOI, na.rm = TRUE)
+
+prediction_grid$predicted_entrapment <- predict(
+  model_entrapment,
+  newdata = prediction_grid,
+  type = "response"
+)
+```
+
+6. Find the predicted maximum
+```{r}
+predicted_optimum <- prediction_grid[
+  which.max(prediction_grid$predicted_entrapment),
+]
+
+predicted_optimum
+```
+
+7. Display the surface
+```{r}
+ggplot(
+  prediction_grid,
+  aes(
+    x = Infection.time.h,
+    y = log10(MOI),
+    z = predicted_entrapment
+  )
+) +
+  geom_contour_filled() +
+  geom_point(
+    data = opt,
+    aes(
+      x = Infection.time.h,
+      y = log10(MOI)
+    ),
+    inherit.aes = FALSE
+  ) +
+  scale_y_continuous(
+    breaks = c(-1, 0, 1),
+    labels = c("0.1", "1", "10")
+  ) +
+  labs(
+    x = "Time of infection (h)",
+    y = "MOI",
+    fill = "Predicted\nentrapment"
+  )
+```
+
+# Okay probably should not have been modeling with entrapment efficiency but rather virospore production (?)
+
+```{r}
+opt$logMOI <- log10(opt$MOI)
+
+# Center predictors
+opt$time_c <- opt$Infection.time.h -
+  mean(opt$Infection.time.h, na.rm = TRUE)
+
+opt$logMOI_c <- opt$logMOI -
+  mean(opt$logMOI, na.rm = TRUE)
+
+rsm_model <- lm(
+  log10(virospores.ml.corrected + 1) ~
+    time_c +
+    I(time_c^2) +
+    logMOI_c +
+    I(logMOI_c^2) +
+    time_c:logMOI_c,
+  data = opt
+)
+
+summary(rsm_model)
+anova(rsm_model)
+```
+
+```{r}
+m1 <- lm(
+  log10(virospores.ml.corrected + 1) ~ time_c + logMOI_c,
+  data = opt
+)
+
+m2 <- lm(
+  log10(virospores.ml.corrected + 1) ~ time_c * logMOI_c,
+  data = opt
+)
+
+m3 <- lm(
+  log10(virospores.ml.corrected + 1) ~
+    time_c +
+    I(time_c^2) +
+    logMOI_c +
+    I(logMOI_c^2) +
+    time_c:logMOI_c,
+  data = opt
+)
+
+anova(m1, m2, m3)
+AIC(m1, m2, m3)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(m3)
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+library(ggplot2)
+# Prepare variables
+opt$logMOI <- log10(opt$MOI)
+
+opt$time_c <- opt$Infection.time.h -
+  mean(opt$Infection.time.h, na.rm = TRUE)
+
+opt$logMOI_c <- opt$logMOI -
+  mean(opt$logMOI, na.rm = TRUE)
+
+# Quadratic response-surface model
+viro_surface <- lm(
+  log10(virospores.ml + 1) ~
+    time_c +
+    I(time_c^2) +
+    logMOI_c +
+    I(logMOI_c^2) +
+    time_c:logMOI_c,
+  data = opt
+)
+
+summary(viro_surface)
+anova(viro_surface)
+```
+```{r}
+par(mfrow = c(2, 2))
+plot(viro_surface)
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+viro_linear <- lm(
+  log10(virospores.ml + 1) ~
+    time_c + logMOI_c,
+  data = opt
+)
+
+viro_interaction <- lm(
+  log10(virospores.ml + 1) ~
+    time_c * logMOI_c,
+  data = opt
+)
+
+anova(
+  viro_linear,
+  viro_interaction,
+  viro_surface
+)
+
+AIC(
+  viro_linear,
+  viro_interaction,
+  viro_surface
+)
+```
+
+
+
+```{r}
+prediction_grid <- expand.grid(
+  Infection.time.h = seq(
+    min(opt$Infection.time.h, na.rm = TRUE),
+    max(opt$Infection.time.h, na.rm = TRUE),
+    length.out = 200
+  ),
+  logMOI = seq(
+    min(opt$logMOI, na.rm = TRUE),
+    max(opt$logMOI, na.rm = TRUE),
+    length.out = 200
+  )
+)
+
+prediction_grid$time_c <-
+  prediction_grid$Infection.time.h -
+  mean(opt$Infection.time.h, na.rm = TRUE)
+
+prediction_grid$logMOI_c <-
+  prediction_grid$logMOI -
+  mean(opt$logMOI, na.rm = TRUE)
+
+# Predictions are initially on the log10 scale
+prediction_grid$predicted_log_virospores <- predict(
+  viro_surface,
+  newdata = prediction_grid
+)
+
+# Back-transform to virospores/mL
+prediction_grid$predicted_virospores_ml <-
+  10^prediction_grid$predicted_log_virospores - 1
+```
+
+```{r}
+ggplot(
+  prediction_grid,
+  aes(
+    x = Infection.time.h,
+    y = logMOI,
+    z = predicted_log_virospores
+  )
+) +
+  geom_contour_filled() +
+  geom_point(
+    data = opt,
+    aes(
+      x = Infection.time.h,
+      y = logMOI
+    ),
+    inherit.aes = FALSE,
+    size = 2
+  ) +
+  scale_y_continuous(
+    breaks = c(-1, 0, 1),
+    labels = c("0.1", "1", "10")
+  ) +
+  labs(
+    x = "Time of infection (h)",
+    y = "MOI",
+    fill = expression(
+      "Predicted log"[10] * "(virospores/mL + 1)"
+    )
+  ) 
+```
+```{r}
+predicted_optimum <- prediction_grid[
+  which.max(prediction_grid$predicted_virospores_ml),
+]
+
+predicted_optimum
+
+
+predicted_optimum$MOI <- 10^predicted_optimum$logMOI
+
+predicted_optimum[
+  c(
+    "Infection.time.h",
+    "MOI",
+    "predicted_virospores_ml"
+  )
+]
+```
+
+```{r}
+
+library(plotly)
+
+# Values used to create the prediction grid
+time_vals <- sort(unique(prediction_grid$Infection.time.h))
+moi_vals  <- sort(unique(prediction_grid$logMOI))
+
+# Convert predicted values into a matrix
+z_matrix <- matrix(
+  prediction_grid$predicted_log_virospores,
+  nrow = length(moi_vals),
+  ncol = length(time_vals),
+  byrow = TRUE
+)
+
+# Make 3D surface
+plot_ly(
+  x = time_vals,
+  y = 10^moi_vals,
+  z = z_matrix,
+  type = "surface"
+) %>%
+  layout(
+    scene = list(
+      xaxis = list(
+        title = "Infection time (h)"
+      ),
+      yaxis = list(
+        title = "MOI",
+        type = "log"
+      ),
+      zaxis = list(
+        title = "Predicted log10(virospores/mL + 1)"
+      )
+    )
+  )
+plot_ly(
+  x = time_vals,
+  y = moi_vals,
+  z = z_matrix,
+  type = "surface"
+) %>%
+  layout(
+    scene = list(
+      xaxis = list(
+        title = "Infection time (h)"
+      ),
+      yaxis = list(
+        title = "MOI",
+        tickvals = c(-1, 0, 1),
+        ticktext = c("0.1", "1", "10")
+      ),
+      zaxis = list(
+        title = "Predicted log10(virospores/mL + 1)"
+      )
+    )
+  )
+
+```
+```
+

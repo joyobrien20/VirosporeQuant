@@ -1,0 +1,143 @@
+---
+title: "synchrony_pilot"
+output: html_document
+date: "2026-05-27"
+---
+
+1. Create the data set since having issues loading in 
+```{r}
+sync_data <- read.delim(text = "
+Sample	Time_h	Replicate	OD600	veg.colonies	veg.dilution	volume.ml	veg.cells.ml	spore.colonies	spore.dilution	spores.ml
+T0R1	0	1	0.889	144	1.00E-04	0.1	1.44E+07	330	1.00E-02	3.30E+05
+T0R2	0	2	0.950	105	1.00E-04	0.1	1.05E+07	271	1.00E-02	2.71E+05
+T0R3	0	3	0.883	65	1.00E-04	0.1	6.50E+06	289	1.00E-02	2.89E+05
+T5R1	5	1	1.653	47	1.00E-06	0.1	4.70E+08	199	1.00E-02	1.99E+05
+T5R2	5	2	1.706	521	1.00E-06	0.1	5.21E+09	157	1.00E-02	1.57E+05
+T5R3	5	3	1.642	33	1.00E-06	0.1	3.30E+08	239	1.00E-02	2.39E+05
+T12R1	12	1	2.000	19	1.00E-06	0.1	1.90E+08	20	1.00E-06	2.00E+08
+T12R2	12	2	1.913	805	1.00E-04	0.1	8.05E+07	28	1.00E-06	2.80E+08
+T12R3	12	3	1.347	9	1.00E-06	0.1	9.00E+07	0	1.00E-06	0.00E+00
+T17R1	17	1	2.255	401	1.00E-04	0.1	4.01E+07	38	1.00E-06	3.80E+08
+T17R2	17	2	1.626	724	1.00E-04	0.1	7.24E+07	10	1.00E-06	1.00E+08
+T17R3	17	3	1.092	259	1.00E-04	0.1	2.59E+07	76	1.00E-06	7.60E+08
+", header = TRUE, sep = "\t")
+
+sync_data
+```
+
+2. Calculate total cells, spore fraction, and spore percent
+```{r}
+library(tidyr)
+library(dplyr)
+# calculate totals and fractions
+sync_data <- sync_data %>%
+  mutate(
+    total_cells_ml = veg.cells.ml + spores.ml,
+    spore_fraction = spores.ml / total_cells_ml,
+    spore_percent = spore_fraction * 100
+  )
+
+```
+3. Get an initial look at the data
+```{r}
+
+library(ggplot2)
+
+plot_data <- sync_data %>%
+  select(Time_h, Replicate, veg.cells.ml, spores.ml) %>%
+  pivot_longer(
+    cols = c(veg.cells.ml, spores.ml),
+    names_to = "Cell_Type",
+    values_to = "Cells_ml"
+  )
+
+ggplot(plot_data,
+       aes(x = Time_h,
+           y = Cells_ml,
+           color = Cell_Type)) +
+
+  geom_point(size = 3) +
+
+  geom_line(aes(group = interaction(Cell_Type, Replicate)),
+            alpha = 0.6) +
+
+  scale_y_log10() +
+
+  theme_classic(base_size = 14) +
+
+  labs(
+    x = "Time (h)",
+    y = "Cells / mL",
+    color = "",
+    title = "Vegetative cells and spores over time"
+  )
+```
+4. Calculate summary stats 
+```{r}
+plot_summary <- sync_data %>%
+  select(Time_h, Replicate, veg.cells.ml, spores.ml) %>%
+  pivot_longer(
+    cols = c(veg.cells.ml, spores.ml),
+    names_to = "Cell_Type",
+    values_to = "Cells_ml"
+  ) %>%
+  group_by(Time_h, Cell_Type) %>%
+  summarise(
+    mean_cells = mean(Cells_ml, na.rm = TRUE),
+    sd_cells = sd(Cells_ml, na.rm = TRUE),
+    n = n(),
+    se_cells = sd_cells / sqrt(n),
+    .groups = "drop"
+  )
+# Plot data summary stats
+ggplot(plot_summary,
+       aes(x = Time_h,
+           y = mean_cells,
+           color = Cell_Type)) +
+  geom_point(size = 3) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(
+    aes(ymin = mean_cells - se_cells,
+        ymax = mean_cells + se_cells),
+    width = 0.5
+  ) +
+  scale_y_log10() +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Time (h)",
+    y = "Cells or spores per mL",
+    color = "",
+    title = "Synchrony flask pilot"
+  )
+```
+
+5. Calculate summary stats on spores
+```{r}
+spore_summary <- sync_data %>%
+  group_by(Time_h) %>%
+  summarise(
+    mean_spore_percent = mean(spore_percent, na.rm = TRUE),
+    sd_spore_percent = sd(spore_percent, na.rm = TRUE),
+    n = n(),
+    se_spore_percent = sd_spore_percent / sqrt(n),
+    .groups = "drop"
+  )
+
+ggplot(spore_summary,
+       aes(x = Time_h,
+           y = mean_spore_percent)) +
+  geom_point(size = 3) +
+  geom_line(linewidth = 1) +
+  geom_errorbar(
+    aes(ymin = mean_spore_percent - se_spore_percent,
+        ymax = mean_spore_percent + se_spore_percent),
+    width = 0.5
+  ) +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Time (h)",
+    y = "Spore fraction (%)",
+    title = "Synchrony pilot: spore fraction"
+  )
+```
+
