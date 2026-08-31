@@ -1,0 +1,786 @@
+---
+title: "SPO1 wt optimal entrapment analysis"
+author: "Joy O'Brien"
+date: "2026-04-24"
+output: html_document
+---
+1. Set wd and figure theme
+```{r}
+setwd("~/GitHub/VirosporeQuant/Optimal.entrap")
+```
+
+```{r}
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+
+1. Optimal entrapment analysis for SPO1 WT phage 
+```{r}
+library(readxl)
+opt <- read_excel("~/GitHub/VirosporeQuant/Optimal.entrap/Data/20260629_optimalentrapment_experiment_data_github.xlsx", sheet = "opt.e")
+```
+
+2. Calculate total spores and entrapment efficiency
+```{r}
+library(tidyverse)
+library(scales)
+
+opt.df <- opt %>%
+  mutate(
+    MOI = factor(MOI),
+    total_spores_ml = virospores.ml.corrected + spores.ml.corrected,
+    entrapment_efficiency = if_else(
+      !is.na(total_spores_ml) & total_spores_ml > 0,
+      virospores.ml.corrected / total_spores_ml,
+      NA_real_
+    ),
+    entrapment_percent = 100 * entrapment_efficiency
+  )
+```
+
+3. Summarize data (entrapment efficiency) and plot
+```{r}
+efficiency_summary <- opt.df %>%
+  group_by(MOI, Infection.time.h) %>%
+  summarise(
+    n = sum(!is.na(entrapment_percent)),
+    mean_EE = mean(entrapment_percent, na.rm = TRUE),
+    sd_EE = sd(entrapment_percent, na.rm = TRUE),
+    se_EE = sd_EE / sqrt(n),
+    .groups = "drop"
+  )
+
+ggplot() +
+  geom_point(
+    data = opt.df,
+    aes(
+      x = Infection.time.h,
+      y = entrapment_percent,
+      color = MOI
+    ),
+    alpha = 0.45,
+    position = position_jitter(width = 0.08)
+  ) +
+  geom_line(
+    data = efficiency_summary,
+    aes(
+      x = Infection.time.h,
+      y = mean_EE,
+      color = MOI,
+      group = MOI
+    ),
+    linewidth = 0.9
+  ) +
+  geom_point(
+    data = efficiency_summary,
+    aes(
+      x = Infection.time.h,
+      y = mean_EE,
+      color = MOI
+    ),
+    size = 2.5
+  ) +
+  geom_errorbar(
+    data = efficiency_summary,
+    aes(
+      x = Infection.time.h,
+      ymin = pmax(0, mean_EE - se_EE),
+      ymax = pmin(100, mean_EE + se_EE),
+      color = MOI
+    ),
+    width = 0.15
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    labels = label_number(suffix = "%")
+  ) +
+  labs(
+    x = "Infection time (h)",
+    y = "Entrapment efficiency (%)",
+    color = "MOI",
+    title = "Entrapment efficiency by infection time and MOI"
+  ) 
+```
+
+```{r}
+# Investigating missing sample; checking for problematic entrapment values
+opt.df %>%
+  filter(
+    !is.finite(entrapment_percent) |
+      entrapment_percent < 0 |
+      entrapment_percent > 100
+  ) %>%
+  select(
+    Sample, Infection.time.h, Rep, MOI,
+    spores.ml, virospores.ml, total_spores_ml,
+    entrapment_percent
+  )
+# Create clean dataset
+plot_results <- opt.df %>%
+  filter(
+    is.finite(Infection.time.h),
+    is.finite(entrapment_percent),
+    between(entrapment_percent, 0, 100)
+  )
+
+# Calculate summary statistics
+efficiency_summary <- plot_results %>%
+  group_by(MOI, Infection.time.h) %>%
+  summarise(
+    n = n(),
+    mean_EE = mean(entrapment_percent),
+    sd_EE = if_else(n > 1, sd(entrapment_percent), NA_real_),
+    se_EE = sd_EE / sqrt(n),
+    .groups = "drop"
+  )
+# Plot
+ggplot() +
+  geom_point(
+    data = plot_results,
+    aes(
+      x = Infection.time.h,
+      y = entrapment_percent,
+      color = MOI
+    ),
+    alpha = 0.45,
+    position = position_jitter(width = 0.08, height = 0)
+  ) +
+  geom_line(
+    data = efficiency_summary,
+    aes(
+      x = Infection.time.h,
+      y = mean_EE,
+      color = MOI,
+      group = MOI
+    ),
+    linewidth = 0.9
+  ) +
+  geom_point(
+    data = efficiency_summary,
+    aes(
+      x = Infection.time.h,
+      y = mean_EE,
+      color = MOI
+    ),
+    size = 2.5
+  ) +
+  geom_errorbar(
+    data = efficiency_summary %>% filter(is.finite(se_EE)),
+    aes(
+      x = Infection.time.h,
+      ymin = mean_EE - se_EE,
+      ymax = mean_EE + se_EE,
+      color = MOI
+    ),
+    width = 0.15
+  ) +
+  scale_y_continuous(
+    labels = scales::label_number(suffix = "%")
+  ) +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(
+    x = "Infection time (h)",
+    y = "Entrapment efficiency (%)",
+    color = "MOI",
+    title = ""
+  ) 
+
+# Looking at missing data
+opt.df %>%
+  summarise(
+    missing_spores = sum(is.na(spores.ml)),
+    missing_virospores = sum(is.na(virospores.ml)),
+    zero_total = sum(total_spores_ml == 0, na.rm = TRUE),
+    missing_time = sum(is.na(Infection.time.h)),
+    valid_EE = sum(is.finite(entrapment_percent))
+  )
+```
+
+4. Preliminary stats on entrapment efficiency (before realizing that the best way to analyze data is through MLE)
+```{r}
+opt.df$logit_entrapment <- qlogis(
+  pmin(pmax(opt.df$entrapment_efficiency, 0.001), 0.999)
+)
+
+ent_model <- lm(
+  logit_entrapment ~ factor(Infection.time.h) * factor(MOI),
+  data = opt.df
+)
+
+anova(ent_model)
+
+# Simplified model
+ent_model2 <- lm(
+  logit_entrapment ~ factor(Infection.time.h),
+  data = opt.df
+)
+
+anova(ent_model2)
+
+library(emmeans)
+pairs(emmeans(ent_model2, "Infection.time.h"), adjust = "tukey")
+```
+2. Plot spores and virospores over time for each MOI 
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Convert to long format
+
+opt_long <- opt %>%
+  pivot_longer(
+    cols = c(spores.ml.corrected, virospores.ml.corrected),
+    names_to = "Cell_type",
+    values_to = "Count"
+  ) %>%
+  mutate(
+    Cell_type= recode(
+      Cell_type,
+      spores.ml.corrected = "Spores",
+      virospores.ml.corrected = "Virospores"
+    )
+  )
+
+ggplot(opt_long,
+       aes(x = Infection.time.h,
+           y = Count,
+           color = Cell_type)) +
+  geom_point() +
+  geom_line(aes(group = interaction(Rep, Cell_type))) +
+  facet_wrap(~MOI) +
+  scale_y_log10()
+
+# PLotting with mean and SE
+ggplot(opt_long,
+       aes(x = Infection.time.h,
+           y = Count,
+           color = Cell_type)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 2.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.4) +
+  facet_wrap(~MOI) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cell type per mL",
+    color = NULL
+  ) 
+```
+3. Preliminary stats
+```{r}
+opt$log_spores <- log10(opt$spores.ml.corrected + 1)
+opt$log_viro <- log10(opt$virospores.ml.corrected + 1)
+
+# Spores 
+spore_model <- lm(
+  log_spores ~ factor(Infection.time.h) * factor(MOI),
+  data = opt
+)
+
+anova(spore_model)
+# Virospores
+viro_model <- lm(
+  log_viro ~ factor(Infection.time.h) * factor(MOI),
+  data = opt
+)
+
+anova(viro_model)
+
+
+spore_model2 <- lm(
+  log10(spores.ml.corrected + 1) ~ factor(Infection.time.h) + factor(MOI),
+  data = opt
+)
+
+library(emmeans)
+# Post hoc
+emmeans(spore_model2, pairwise ~ factor(Infection.time.h), adjust = "tukey")
+
+viro_model2 <- lm(
+  log10(virospores.ml.corrected + 1) ~ factor(Infection.time.h),
+  data = opt
+)
+
+anova(viro_model2)
+# Post hoc pairwise comparison
+pairs(emmeans(viro_model2, "Infection.time.h"), adjust = "tukey")
+```
+```{r}
+# Additive model 
+model2 <- lm(
+  log_spores ~ factor(Infection.time.h) + factor(MOI),
+  data = opt
+)
+
+library(emmeans)
+
+emmeans(model2, "Infection.time.h")
+pairs(emmeans(model2, "Infection.time.h"))
+
+emmeans(model2, "MOI")
+pairs(emmeans(model2, "MOI")) 
+```
+
+
+```{r}
+ggplot(opt_long,
+       aes(x = Infection.time.h,
+           y = Count,
+           color = Cell_type)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 2.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.4) +
+  facet_wrap(~MOI) +
+  scale_color_manual(
+    values = c(
+      "Spores" = "blue",
+      "Virospores" = "red"
+    )
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cell type per mL",
+    color = NULL
+  )
+```
+Plot similarly to above
+```{r}
+ggplot(opt_long,
+       aes(x = Infection.time.h,
+           y = Count,
+           color = Cell_type)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 2.5) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.4) +
+  facet_wrap(~MOI, nrow = 1) +
+  scale_color_manual(
+    values = c(
+      "Spores" = "blue",
+      "Virospores" = "red"
+    )
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cell type per mL",
+    color = NULL
+  )
+```
+Remove NA and plot again
+```{r}
+ggplot(
+  subset(opt_long, !is.na(Count) & !is.na(MOI)),
+  aes(
+    x = Infection.time.h,
+    y = Count,
+    color = Cell_type
+  )
+) +
+  stat_summary(
+    fun = mean,
+    geom = "line",
+    linewidth = 1
+  ) +
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    size = 2.5
+  ) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "errorbar",
+    width = 0.4
+  ) +
+  facet_wrap(~MOI, nrow = 1) +
+  scale_color_manual(
+    values = c(
+      "Spores" = "blue",
+      "Virospores" = "red"
+    )
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cell type per mL",
+    color = NULL
+  )
+```
+
+
+```{r}
+#Instead of calculating mean spores and se_spores on raw scale, each replicate can be converted log10 (scaling the data) THEN calculate mean and SE on the log scale, then convert back to spores per ml -- i.e., transformed each replicate to log10 averaged the transformed values, calculated error on transformed scale, then converted back to spores/mL for plotting. 
+spore_summary_log <- opt %>%
+  filter(spores.ml > 0) %>% # remove 0
+  mutate(log_spores = log10(spores.ml)) %>% #transform the replicate
+  group_by(Infection.time.h, MOI) %>% #group by 
+  summarise(
+    mean_log = mean(log_spores, na.rm = TRUE), #calculate average on log scale
+    se_log = sd(log_spores, na.rm = TRUE) / sqrt(n()), #calculate se
+    ymin = 10^(mean_log - se_log),
+    ymax = 10^(mean_log + se_log),
+    mean_spores = 10^mean_log,
+    .groups = "drop"
+  )
+
+panel_A <- ggplot(spore_summary_log,
+       aes(x = Infection.time.h,
+           y = mean_spores,
+           color = factor(MOI),
+           group = factor(MOI))) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = ymin, ymax = ymax),
+    width = 0.3
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "Time of Infection (h)",
+    y = "Spores per mL",
+    color = "MOI"
+  ) 
+panel_A
+```
+
+Checking data distribution 
+```{r}
+opt$log_spores <- log10(opt$spores.ml)
+log_data <- opt %>%
+  filter(spores.ml > 0) %>%
+  mutate(log_spores = log10(spores.ml))
+
+qqnorm(log_data$log_spores)
+qqline(log_data$log_spores, col = "red")
+```
+
+8. Preliminary stats on uninfected spores (before I had full data, I ran this exercise)
+```{r}
+# in order to do anova you need to have the following: 
+# indepdendent obs 
+# normality 
+# homogeneity of variance
+# continuous dependent variable
+
+# First determine if ANOVA is appropriate
+model <- lm(log10(spores.ml + 1) ~ factor(Infection.time.h) * factor(MOI),
+            data = opt)
+anova(model)
+par(mfrow = c(2,2))
+plot(model)
+
+# test the normality of residuals
+shapiro.test(residuals(model))
+```
+Confirm variables and missing data
+```{r}
+str(opt)
+
+colSums(is.na(opt[, c(
+  "spores.ml",
+  "Infection.time.h",
+  "MOI"
+)]))
+
+# Remove virospore columns for now 
+library(dplyr)
+#opt <- opt %>%
+  #select(-vPFU.count, -vPFU.dilution)
+
+# visualize raw distributions
+library(ggplot2)
+
+ggplot(
+  opt,
+  aes(
+    x = interaction(Infection.time.h, MOI),
+    y = spores.ml
+  )
+) +
+  geom_boxplot() +
+  geom_jitter(width = 0.15) +
+  scale_y_log10() +
+  labs(
+    x = "Infection time × MOI",
+    y = "Spores per mL"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+```
+
+Fit anova model
+```{r}
+opt <- opt %>%
+  mutate(
+    Infection.time.h = factor(Infection.time.h),
+    MOI = factor(MOI)
+  )
+
+model <- lm(
+  log10(spores.ml + 1) ~ Infection.time.h * MOI,
+  data = opt
+)
+
+# Check residuals
+par(mfrow = c(2, 2))
+plot(model)
+par(mfrow = c(1, 1))
+
+# Check residual normality
+qqnorm(residuals(model))
+qqline(residuals(model))
+
+shapiro.test(residuals(model)) # residuals are not normal
+
+# Check equal variances
+library(car)
+
+leveneTest(
+  log10(spores.ml + 1) ~
+    interaction(Infection.time.h, MOI),
+  data = opt
+)
+# Okay variances are equal
+
+
+#Visually check the residual spread 
+plot(
+  fitted(model),
+  residuals(model),
+  xlab = "Fitted values",
+  ylab = "Residuals"
+)
+
+abline(h = 0, lty = 2)
+
+# Check for unusual obs
+cooks <- cooks.distance(model)
+
+which(cooks > 4 / nobs(model))
+```
+Moving forward with ANOVA
+```{r}
+# Fit the full model
+model1 <- lm(
+  log10(spores.ml + 1) ~ factor(Infection.time.h) * factor(MOI),
+  data = opt
+)
+
+anova(model)
+# okay so timing of infection is important and so is MOI but because the interaction between time and MOI is not significant, we can transition to an additive model 
+
+# We can simplify the model because time and MOI were not signififcant 
+model2 <- lm(
+  log10(spores.ml + 1) ~ Infection.time.h + MOI, 
+  data = opt
+)
+
+anova(model2)
+# Post hoc tests
+library(emmeans)
+emm_time <- emmeans(model2, ~ Infection.time.h)
+pairs(emm_time, adjust = "tukey")
+
+# compact letter display
+library(multcomp)
+
+cld(
+  emm_time,
+  adjust = "tukey",
+  Letters = letters
+)
+# Okay need to add a panel to the figure of the distribtuons of MOI-- the marginal means from emmeans for infection time time averaged across MOIOS with the compact letter display 
+
+library(emmeans)
+library(multcomp)
+library(dplyr)
+library(ggplot2)
+
+
+# Add Tukey compact-letter groups
+emm_time_letters <- cld(
+  emm_time,
+  adjust = "tukey",
+  Letters = letters
+) %>%
+  as.data.frame() %>%
+  mutate(
+    Infection.time.h = as.numeric(as.character(Infection.time.h)),
+    .group = trimws(.group)
+  )
+
+panel_B <- ggplot(
+  emm_time_letters,
+  aes(x = Infection.time.h, y = emmean)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.CL, ymax = upper.CL),
+    width = 0.3
+  ) +
+  geom_text(
+    aes(y = upper.CL + 0.25, label = .group),
+    size = 4
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 24, by = 2)
+  ) +
+  labs(
+    x = "Infection time (h)",
+    y = expression("Estimated marginal mean log"[10] *
+                     "(spores mL"^{-1} * " + 1)")
+  ) 
+
+panel_B
+
+# Because the model works on the log scale, we need to back track to spores/ML
+emm_time_letters_original <- emm_time_letters %>%
+  mutate(
+    spores_emmean = 10^emmean - 1,
+    spores_lower = 10^lower.CL - 1,
+    spores_upper = 10^upper.CL - 1
+  )
+
+# Plot on tthe original scale 
+panel_B <- ggplot(
+  emm_time_letters_original,
+  aes(x = Infection.time.h, y = spores_emmean)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = spores_lower, ymax = spores_upper),
+    width = 0.3
+  ) +
+  geom_text(
+    aes(y = spores_upper * 1.4, label = .group),
+    size = 4
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 24, by = 2)
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "Infection time (h)",
+    y = "Model-adjusted mean spores per mL"
+  ) 
+
+panel_B
+# MOI was also significant
+emm_moi <- emmeans(model, ~ MOI)
+pairs(emm_moi, adjust = "tukey")
+
+moi_results <- cld(
+  emm_moi,
+  adjust = "tukey",
+  Letters = letters
+) %>%
+  as.data.frame() %>%
+  mutate(
+    .group = trimws(.group),
+    estimated_spores = 10^emmean - 1,
+    lower_spores = 10^lower.CL - 1,
+    upper_spores = 10^upper.CL - 1
+  )
+# Plot MOIS
+panel_C <- ggplot(
+  moi_results,
+  aes(x = MOI, y = estimated_spores)
+) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower_spores, ymax = upper_spores),
+    width = 0.15
+  ) +
+  geom_text(
+    aes(y = upper_spores * 1.3, label = .group),
+    size = 4
+  ) +
+  scale_y_log10() +
+  labs(
+    x = "MOI",
+    y = "Model-adjusted mean spores per mL"
+  ) 
+
+panel_C
+
+library(patchwork)
+
+final_figure <- panel_A / (panel_B + panel_C) +
+  plot_annotation(tag_levels = "A")
+
+final_figure
+
+ggsave(
+  "Figure1_spores.pdf",
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+```
+Putting the panel figures together
+```{r}
+library(patchwork)
+
+combined_figure <- panel_A + panel_B +
+  plot_annotation(tag_levels = "A")
+
+combined_figure
+```
+Modeling time as continuous (since it shouldn't be a factor)
+```{r}
+model3 <- lm(log10(spores.ml + 1) ~ Infection.time.h, data = opt)
+model3
+anova(model3)
+
+model4 <- lm(log10(spores.ml + 1) ~ Infection.time.h + MOI, data = opt)
+anova(model4)
+```

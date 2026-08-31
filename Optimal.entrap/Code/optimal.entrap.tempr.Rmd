@@ -1,0 +1,466 @@
+---
+title: "optimal.entrap.tempr"
+author: "Joy O'Brien"
+date: "2026-06-01"
+output: html_document
+---
+Note: this is a temporary file that was used when my laptop was unavailable and I was working in posit cloud
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+0. Set theme
+```{r}
+install.packages("paletteer")
+library(paletteer)
+library(ggplot2)
+theme_set(theme_classic() +
+  theme(axis.title = element_text(size = 16),
+        axis.title.x = element_text(margin = margin(t = 15, b = 15)),
+        axis.title.y = element_text(margin = margin(l = 15, r = 15)),
+        axis.text = element_text(size = 13),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.text.y = element_text(margin = margin(r = 5)),
+        #axis.line.x = element_line(linewidth = 1),
+        #axis.line.y = element_line(linewidth = 1),
+        axis.ticks.y.right = element_line(linewidth = 1),
+        axis.text.y.right = element_text(size = 13, margin = margin(l = 5)),
+        axis.line.y.right = element_line(linewidth = 0.1),
+        axis.ticks.x.top = element_line(linewidth = 1),
+        axis.text.x.top = element_text(size = 13, margin = margin(b = 5)),
+        axis.line.x.top = element_line(linewidth = 0.1),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_line(linewidth = 1),
+        axis.ticks.y = element_line(linewidth = 1),
+        axis.ticks.length = unit(.1, "in"),
+        panel.border = element_rect(color = "grey20", fill = NA, linewidth = 1.5),
+        legend.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        strip.background = element_blank()
+        )) 
+colors <-paletteer_d("ggthemes::Miller_Stone")
+```
+
+
+1. Load in the preliminary data of the pilot experiment (T0, T2, T4, T10, T12, T14)
+```{r}
+library(tidyverse)
+
+# Load data in having a hard time with posit-doing it manually
+dat <- read.delim(text = "
+Sample.ID	Time.infection.hr	Rep	MOI	spores.Dilution	Spores.cfu	volume.ml	spores.ml	virospores.pfu	virospores.dilution	virospores.ml
+T0R1_1	0	1	1	1.00E-02	47	0.1	4.70E+04	457	1.00E-01	4.57E+04
+T0R2_1	0	2	1	1.00E-02	31	0.1	3.10E+04	120	1.00E-01	1.20E+04
+T0R3_1	0	3	1	1.00E-02	80	0.1	8.00E+04	61	1.00E-01	6.10E+03
+T2R1_1	2	1	1	1	228	0.1	2.28E+03	444	1.00E-01	4.44E+04
+T2R2_1	2	2	1	1	75	0.1	7.50E+02	15	1.00E-03	1.50E+05
+T2R3_1	2	3	1	1	138	0.1	1.38E+03	516	1.00E-01	5.16E+04
+T4R1_1	4	1	1	1	21	0.1	2.10E+02	9	1.00E-03	9.00E+04
+T4R2_1	4	2	1	1	12	0.1	1.20E+02	516	1.00E-03	5.16E+06
+T4R3_1	4	3	1	1	4	0.1	4.00E+01	137	1.00E-03	1.37E+06
+T10R1_0.1	10	1	0.1	1.00E-01	142	0.1	1.42E+04	20	1.00E-06	2.00E+08
+T10R2_0.1	10	2	0.1	1.00E-03	170	0.1	1.70E+06	14	1.00E-06	1.40E+08
+T10R3_0.1	10	3	0.1	1.00E-01	249	0.1	2.49E+04	418	1.00E-04	4.18E+07
+T10R1_1	10	1	1	1.00E-03	150	0.1	1.50E+06	973	1.00E-04	9.73E+07
+T10R2_1	10	2	1	1.00E-01	150	0.1	1.50E+04	0	1.00E-04	0.00E+00
+T10R3_1	10	3	1	1.00E-01	153	0.1	1.53E+04	16	1.00E-06	1.60E+08
+T10R1_10	10	1	10	1.00E-01	440	0.1	4.40E+04	24	1.00E-06	2.40E+08
+T10R2_10	10	2	10	1.00E-03	224	0.1	2.24E+06	27	1.00E-06	2.70E+08
+T10R3_10	10	3	10	1.00E-03	200	0.1	2.00E+06	0	1.00E-06	0.00E+00
+T12R1_0.1	12	1	0.1	1.00E-03	1301	0.1	1.30E+07	108	1.00E-04	1.08E+07
+T12R2_0.1	12	2	0.1	1.00E-03	1058	0.1	1.06E+07	151	1.00E-04	1.51E+07
+T12R3_0.1	12	3	0.1	1.00E-03	2312	0.1	2.31E+07	161	1.00E-04	1.61E+07
+T12R1_1	12	1	1	1.00E-03	924	0.1	9.24E+06	429	1.00E-04	4.29E+07
+T12R2_1	12	2	1	1.00E-06	6	0.1	6.00E+07	183	1.00E-04	1.83E+07
+T12R3_1	12	3	1	1.00E-03	514	0.1	5.14E+06	174	1.00E-04	1.74E+07
+T12R1_10	12	1	10	1.00E-03	200	0.1	2.00E+06	44	1.00E-04	4.40E+06
+T12R2_10	12	2	10	1.00E-03	122	0.1	1.22E+06	80	1.00E-04	8.00E+06
+T12R3_10	12	3	10	1.00E-03	372	0.1	3.72E+06	430	1.00E-04	4.30E+07
+T14R1_0.1	14	1	0.1	1.00E-03	1105	0.1	1.11E+07	NA	NA	NA
+T14R2_0.1	14	2	0.1	1.00E-04	308	0.1	3.08E+07	NA	NA	NA
+T14R3_0.1	14	3	0.1	1.00E-04	740	0.1	7.40E+07	NA	NA	NA
+T14R1_1	14	1	1	1.00E-04	298	0.1	2.98E+07	NA	NA	NA
+T14R2_1	14	2	1	1.00E-04	286	0.1	2.86E+07	NA	NA	NA
+T14R3_1	14	3	1	1.00E-04	385	0.1	3.85E+07	NA	NA	NA
+T14R1_10	14	1	10	1.00E-03	607	0.1	6.07E+06	NA	NA	NA
+T14R2_10	14	2	10	1.00E-03	1040	0.1	1.04E+07	NA	NA	NA
+T14R3_10	14	3	10	1.00E-03	1028	0.1	1.03E+07	NA	NA	NA
+", header = TRUE, sep = "\t")
+
+str(dat)
+head(dat)
+```
+
+2. Clean data and calculate entrapment efficiency (%)
+```{r}
+library(tidyverse)
+
+# Make sure variables are numeric / factors as needed
+dat_clean <- dat %>%
+  mutate(
+    Time.infection.hr = as.numeric(Time.infection.hr),
+    Rep = as.factor(Rep),
+    MOI = as.factor(MOI),
+    spores.ml = as.numeric(spores.ml),
+    virospores.ml = as.numeric(virospores.ml),
+    
+    entrapment.efficiency = virospores.ml / (virospores.ml + spores.ml),
+    entrapment.percent = entrapment.efficiency * 100
+  )
+```
+
+3. Convert to long format
+```{r}
+spore_viro_long <- dat_clean %>%
+  select(Sample.ID, Time.infection.hr, Rep, MOI, spores.ml, virospores.ml) %>%
+  pivot_longer(
+    cols = c(spores.ml, virospores.ml),
+    names_to = "type",
+    values_to = "count.ml"
+  )
+# Initial plot
+ggplot(spore_viro_long,
+       aes(x = Time.infection.hr,
+           y = count.ml,
+           color = type,
+           group = interaction(type, MOI))) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "errorbar",
+    width = 0.3
+  ) +
+  facet_wrap(~ MOI) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Count per mL",
+    color = NULL
+  ) 
+```
+
+4. Plotting entrapment efficiency
+```{r}
+ggplot(dat_clean,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent,
+           color = MOI,
+           group = MOI)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "errorbar",
+    width = 0.3
+  ) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)",
+    color = "MOI"
+  )
+```
+
+5. Next: plot the entrapment efficiency for just moi = 1, then plot for moi = 1, 10 separately 
+```{r}
+ggplot(spore_viro_long,
+       aes(x = Time.infection.hr,
+           y = count.ml,
+           color = type,
+           group = interaction(type, MOI))) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "errorbar",
+    width = 0.3
+  ) +
+  facet_wrap(~ MOI) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Count per mL",
+    color = NULL
+  ) 
+```
+6. Plot summary stats
+```{r}
+ggplot(dat_clean,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent,
+           color = MOI,
+           group = MOI)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(
+    fun.data = mean_se,
+    geom = "errorbar",
+    width = 0.3
+  ) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)",
+    color = "MOI"
+  ) 
+```
+7. Plot MOI = 1; parse data and then plot
+```{r}
+moi1 <- dat_clean %>% filter(MOI == "1")
+
+moi1_long <- moi1 %>%
+  select(Time.infection.hr, spores.ml, virospores.ml) %>%
+  pivot_longer(
+    cols = c(spores.ml, virospores.ml),
+    names_to = "type",
+    values_to = "count.ml"
+  ) %>%
+  mutate(
+    type = factor(
+      type,
+      levels = c("spores.ml", "virospores.ml"),
+      labels = c("Spores", "Virospores")
+    )
+  )
+ggplot(moi1_long,
+       aes(x = Time.infection.hr,
+           y = count.ml,
+           color = type,
+           group = type)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cells per mL",
+    color = NULL
+  ) 
+```
+
+
+
+8. Plot entrapment efficiency for each MOI 
+```{r}
+#Entrapment efficiency 
+ggplot(moi1,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)"
+  ) 
+```
+
+MOI = 0.1 data 
+```{r}
+moi0.1 <- dat_clean %>% filter(MOI == "0.1")
+
+
+moi0.1_long <- moi0.1 %>%
+  select(Time.infection.hr, spores.ml, virospores.ml) %>%
+  pivot_longer(
+    cols = c(spores.ml, virospores.ml),
+    names_to = "type",
+    values_to = "count.ml"
+  )
+moi0.1_long$type <- factor(
+  moi0.1_long$type,
+  levels = c("virospores.ml", "spores.ml")
+)
+ggplot(moi0.1_long,
+       aes(x = Time.infection.hr,
+           y = count.ml,
+           color = type,
+           group = type)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cells per mL",
+    color = NULL
+  ) 
+```
+MOI = 10 data 
+```{r}
+moi10 <- dat_clean %>% filter(MOI == "10")
+
+
+moi10_long <- moi10 %>%
+  select(Time.infection.hr, spores.ml, virospores.ml) %>%
+  pivot_longer(
+    cols = c(spores.ml, virospores.ml),
+    names_to = "type",
+    values_to = "count.ml"
+  )
+moi10_long$type <- factor(
+  moi10_long$type,
+  levels = c("virospores.ml", "spores.ml")
+)
+ggplot(moi10_long,
+       aes(x = Time.infection.hr,
+           y = count.ml,
+           color = type,
+           group = type)) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  scale_y_log10() +
+  labs(
+    x = "Time of infection (h)",
+    y = "Cells per mL",
+    color = NULL
+  ) 
+```
+
+```{r}
+#Entrapment efficiency MOI = 0.1
+ggplot(moi0.1,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)"
+  ) 
+```
+
+```{r}
+#Entrapment efficiency MOI = 10
+ggplot(moi10,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.3) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)"
+  ) 
+```
+
+Plotting all 3 MOIs
+```{r}
+ee_plot <- dat_clean %>%
+  filter(Time.infection.hr %in% c(10, 12))
+
+ggplot(ee_plot,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent,
+           color = factor(MOI),
+           group = factor(MOI))) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.2) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)",
+    color = "MOI"
+  )
+```
+
+```{r}
+# Looking at t = 10, t = 12
+moi1_1012 <- dat_clean %>%
+  filter(
+    MOI == 1,
+    Time.infection.hr %in% c(10, 12)
+  )
+
+ggplot(moi1_1012,
+       aes(x = Time.infection.hr,
+           y = entrapment.percent)) +
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1) +
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.2) +
+  labs(
+    x = "Time of infection (h)",
+    y = "Entrapment efficiency (%)"
+  )
+```
+
+9. Trying out stats 
+```{r}
+# Linear model 1
+lm1 <- lm(entrapment.percent ~ factor(Time.infection.hr), data = dat_clean)
+anova(lm1) #anova on model 1
+# Linear model 2
+model2 <- lm(
+  entrapment.percent ~ factor(Time.infection.hr) * factor(MOI),
+  data = dat_clean
+)
+model2
+
+anova(model2) # anova on model 2
+library(emmeans)
+
+emmeans(model2, pairwise ~ Time.infection.hr,
+        adjust = "tukey")
+# model <- lm(
+#   entrapment.percent ~ factor(Time.infection.hr) * factor(MOI),
+#   data = dat_clean
+# )
+# 
+# anova(model)
+# 
+# anova(model2)
+# install.packages("emmeans")
+# library(emmeans)
+# 
+# emmeans(model2, pairwise ~ Time.infection.hr)
+# ```
+```
+
+GLM
+```{r}
+glm1 <- glm(
+  entrapment.efficiency ~ factor(Time.infection.hr),
+  family = quasibinomial,
+  data = dat_clean
+)
+anova(glm1, test = "F")
+```

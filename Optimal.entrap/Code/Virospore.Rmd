@@ -1,0 +1,346 @@
+---
+title: "Virus entrapment"
+author: "Jay T. Lennon"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+header-includes:
+   - \usepackage{array}
+output: pdf_document
+geometry: margin=2.54cm
+---
+
+Virus entrapment dynamics
+
+## Clear workspace and set directory
+
+```{r setup}
+rm(list = ls())
+getwd()
+setwd("~/Desktop/Virospore/")
+```
+
+## Load packages and functions
+
+```{r}
+require("png")
+require("dplyr")
+require("grid")
+require("plyr")
+require("tidyverse")
+require("bbmle")
+```
+
+## Load data
+
+```{r}
+viro <- read.csv("virospore.csv", header = TRUE, sep = ",")
+
+# Subset data for MOI = 0.1
+viro.sub <- viro %>%
+  filter(MOI == 0.1, !is.na(virospores.ml)) %>%
+  mutate(
+    time = Infection.time.h,
+    y = log10(virospores.ml)
+  )
+
+# Check the data used in the analysis
+nrow(viro.sub)
+summary(viro.sub)
+
+# Observed range of infection time
+range(viro.sub$time)
+```
+
+## Fit equations with maximum likelihood
+
+### Model 1: Flat baseline + symmetric Gaussian window
+
+```{r}
+# Starting values
+B0 = min(viro.sub$y)
+A = max(viro.sub$y) - min(viro.sub$y)
+MU = viro.sub$time[which.max(viro.sub$y)]
+SIGMA = 4
+Z = sd(viro.sub$y)
+
+fit1 <- mle2(y ~
+    dnorm(mean = b0 +
+          a * exp(-(time - mu)^2 / (2 * sigma^2)),
+          sd = z),
+    start = list(b0 = B0, a = A, mu = MU,
+                 sigma = SIGMA, z = Z),
+    method = "L-BFGS-B",
+    lower = c(b0 = -Inf,
+              a = 0,
+              mu = min(viro.sub$time),
+              sigma = 0.001,
+              z = 0.001),
+    upper = c(b0 = Inf,
+              a = Inf,
+              mu = max(viro.sub$time),
+              sigma = Inf,
+              z = Inf),
+    data = viro.sub)
+
+summary(fit1)
+```
+
+### Model 2: Linear baseline + symmetric Gaussian window
+
+```{r}
+# Starting values
+B0 = min(viro.sub$y)
+B1 = -0.05
+A = max(viro.sub$y) - min(viro.sub$y)
+MU = viro.sub$time[which.max(viro.sub$y)]
+SIGMA = 4
+Z = sd(viro.sub$y)
+
+fit2 <- mle2(y ~
+    dnorm(mean = b0 + b1 * time +
+          a * exp(-(time - mu)^2 / (2 * sigma^2)),
+          sd = z),
+    start = list(b0 = B0, b1 = B1, a = A, mu = MU,
+                 sigma = SIGMA, z = Z),
+    method = "L-BFGS-B",
+    lower = c(b0 = -Inf,
+              b1 = -Inf,
+              a = 0,
+              mu = min(viro.sub$time),
+              sigma = 0.001,
+              z = 0.001),
+    upper = c(b0 = Inf,
+              b1 = Inf,
+              a = Inf,
+              mu = max(viro.sub$time),
+              sigma = Inf,
+              z = Inf),
+    data = viro.sub)
+
+summary(fit2)
+```
+
+### Model 3: Flat baseline + asymmetric Gaussian window
+
+```{r}
+# Starting values
+B0 = min(viro.sub$y)
+A = max(viro.sub$y) - min(viro.sub$y)
+MU = viro.sub$time[which.max(viro.sub$y)]
+SIGMAL = 4
+SIGMAR = 4
+Z = sd(viro.sub$y)
+
+fit3 <- mle2(y ~
+    dnorm(mean = b0 +
+          a * ifelse(time <= mu,
+              exp(-(time - mu)^2 / (2 * sigmaL^2)),
+              exp(-(time - mu)^2 / (2 * sigmaR^2))),
+          sd = z),
+    start = list(b0 = B0, a = A, mu = MU,
+                 sigmaL = SIGMAL, sigmaR = SIGMAR, z = Z),
+    method = "L-BFGS-B",
+    lower = c(b0 = -Inf,
+              a = 0,
+              mu = min(viro.sub$time),
+              sigmaL = 0.001,
+              sigmaR = 0.001,
+              z = 0.001),
+    upper = c(b0 = Inf,
+              a = Inf,
+              mu = max(viro.sub$time),
+              sigmaL = Inf,
+              sigmaR = Inf,
+              z = Inf),
+    data = viro.sub)
+
+summary(fit3)
+```
+
+## Compare models
+
+```{r}
+# Compare models using AIC
+AIC(fit1, fit2, fit3)
+
+# Calculate delta AIC
+aic <- AIC(fit1, fit2, fit3)
+
+aic$deltaAIC <- aic$AIC - min(aic$AIC)
+
+# Calculate AIC weights
+aic$weight <- exp(-0.5 * aic$deltaAIC) /
+              sum(exp(-0.5 * aic$deltaAIC))
+
+aic
+```
+
+
+## Inferring entrapment window parameters from the estimates in fit 3
+
+The asymmetric Gaussian model (fit 3) provides estimates of the timing and breadth of
+the entrapment window. The peak occurs at `mu`. The breadth of the window is
+described by the half-width at half-maximum (HWHM) on the early and late sides,
+and by their sum, the full width at half-maximum (FWHM).
+
+```{r}
+# Extract coefficients from the best model
+p <- coef(fit3)
+
+# Extract parameters
+mu <- p["mu"]
+sigmaL <- p["sigmaL"]
+sigmaR <- p["sigmaR"]
+
+# Conversion from sigma to half-width at half-maximum
+hwhm <- sqrt(2 * log(2))
+
+# Calculate window parameters
+HWHM_L <- hwhm * sigmaL
+HWHM_R <- hwhm * sigmaR
+FWHM <- HWHM_L + HWHM_R
+
+# Asymmetry index
+asymmetry <- (sigmaR - sigmaL) / (sigmaR + sigmaL)
+
+# Ratio of right to left width
+width_ratio <- sigmaR / sigmaL
+
+# Half-maximum times
+half_left <- mu - HWHM_L
+half_right <- mu + HWHM_R
+
+# Create table of window parameters
+window <- data.frame(
+  Parameter = c(
+    "Peak time (h)",
+    "Left HWHM (h)",
+    "Right HWHM (h)",
+    "FWHM (h)",
+    "Left half-maximum time (h)",
+    "Right half-maximum time (h)",
+    "Asymmetry index",
+    "Right / left width"
+  ),
+  Estimate = c(
+    mu,
+    HWHM_L,
+    HWHM_R,
+    FWHM,
+    half_left,
+    half_right,
+    asymmetry,
+    width_ratio
+  )
+)
+
+window
+```
+
+## Plot data and fit3 predicted values
+
+```{r}
+png(filename="~/Desktop/Virospore/fit3_moi0.1.png",
+    width = 1200, height = 1200, res = 96*2)
+
+plot.new()
+par(mar = c(7, 7, 5, 7))
+
+plot(viro.sub$time, viro.sub$virospores.ml,
+     xlim = c(-1, 26),
+     ylim = c(1e3, 1e12),
+     type = "p",
+     log = "y",
+     pch = 22,
+     bg = "red",
+     col = "red",
+     cex = 2,
+     ylab = "",
+     xlab = "",
+     las = 1,
+     lwd = 2,
+     yaxt = "n",
+     xaxt = "n")
+
+box(lwd = 2)
+
+# Add y-axis ticks and labels
+axis(side = 2,
+     lwd.ticks = 2,
+     las = 1,
+     cex.axis = 1.25,
+     at = 10^(3:12),
+     labels = expression(
+       10^3, 10^4, 10^5, 10^6, 10^7,
+       10^8, 10^9, 10^10, 10^11, 10^12
+     ))
+
+axis(side = 4,
+     labels = FALSE,
+     lwd.ticks = 2,
+     at = 10^(3:12))
+
+# Add x-axis ticks and labels
+axis(side = 1,
+     lwd.ticks = 2,
+     cex.axis = 1.25,
+     las = 1,
+     mgp = c(3, 1, 0),
+     labels = c(0, 5, 10, 15, 20, 25),
+     at = c(0, 5, 10, 15, 20, 25))
+
+axis(side = 3,
+     labels = FALSE,
+     lwd.ticks = 2,
+     at = c(0, 5, 10, 15, 20, 25))
+
+# Axis titles
+mtext("Infection time (h)",
+      side = 1,
+      outer = TRUE,
+      cex = 1.5,
+      line = -4,
+      adj = 0.5)
+
+mtext(expression(paste("Virospores (mL"^{-1}, ")")),
+      side = 2,
+      outer = TRUE,
+      cex = 1.5,
+      line = -3.5,
+      adj = 0.55)
+
+# Extract fit3 coefficients
+p <- coef(fit3)
+
+# Infection times for predicted curve
+x.pred <- seq(0, 24, length.out = 1000)
+
+# Predicted log10 virospore concentration
+y.pred.log <- p["b0"] +
+  p["a"] *
+  ifelse(
+    x.pred <= p["mu"],
+    exp(-(x.pred - p["mu"])^2 /
+          (2 * p["sigmaL"]^2)),
+    exp(-(x.pred - p["mu"])^2 /
+          (2 * p["sigmaR"]^2))
+  )
+
+# Convert predictions to original virospore scale
+y.pred <- 10^y.pred.log
+
+# Add fitted curve
+lines(x.pred, y.pred,
+      col = "red",
+      lty = 1,
+      lwd = 3)
+
+# Close plot device
+dev.off()
+graphics.off()
+
+# Show plot
+img <- readPNG("~/Desktop/Virospore/fit3_moi0.1.png")
+grid.raster(img)
+```
+
+
