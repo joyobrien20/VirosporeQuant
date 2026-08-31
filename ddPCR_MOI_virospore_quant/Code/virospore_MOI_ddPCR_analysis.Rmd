@@ -49,56 +49,79 @@ colors <-paletteer_d("ggthemes::Miller_Stone")
 ```{r}
 # Load data
 # Previous data
-#virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20250306_SPO1_Delta6_MOI_ddPCR.csv")
+# Previous data
+#virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20251015_1536_SPO1_Delta6_MOI_2_20250918_092121_473.csv")
 
-virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20251015_1536_SPO1_Delta6_MOI_2_20250918_092121_473.csv")
+# Thresholded data
+#virospore_MOI <- read.csv("~/GitHub/VirosporeQuant/ddPCR_MOI_virospore_quant/Data/20251203_1158_SPO1_Delta6_MOI_thresholded.csv")
+
 ```
 
 2. Calculate entrapment efficiency
 ```{r}
 # Calculate entrapment efficiency for each replicate sample
 # Previous data
-# virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_Copy_copies_ul / virospore_MOI$Bacillus_Copy) * 100
+virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_Copy_copies_ul / virospore_MOI$Bacillus_Copy) * 100
 
 
-virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_copy_ul / virospore_MOI$Bacillus_copy_ul) * 100
+#virospore_MOI$Entrapment_Efficiency <- (virospore_MOI$SPO1_copy_ul / virospore_MOI$Bacillus_copy_ul) * 100
+write.csv(virospore_MOI, "~/Desktop/virospore_MOI_exp1.csv")
 ```
 
 3. Initial data look
 ```{r}
 library(dplyr)
 # Let's remove all NA's
-virospore_MOI <- virospore_MOI %>%
-  mutate(MOI = as.numeric(MOI)) %>%
-  filter(!is.na(SPO1_copy_ul),
-         !is.na(Bacillus_copy_ul),
-         !is.na (Entrapment_Efficiency))
+# virospore_MOI <- virospore_MOI %>%
+#   mutate(MOI = as.numeric(MOI)) %>%
+#   filter(!is.na(SPO1_copy_ul),
+#          !is.na(Bacillus_copy_ul),
+#          !is.na (Entrapment_Efficiency))
 
 # Look at the data structure (following QB packet week 1)
 str(virospore_MOI)
 
 # Looking for any correlations among variables, but first index the data
-viro.num <- virospore_MOI[ c(3, 7)]
+viro.num <- virospore_MOI[ c(3, 6)]
 pairs(viro.num)
 
 # Perform a correlation test
 cor1 <- cor(viro.num)
 summary(cor1)
 print(cor1)
+```
 
 
+```{r}
 lm.model <- lm(Entrapment_Efficiency ~ MOI, data = virospore_MOI)
 summary(lm.model)
-
+# Plot in base r
 plot(virospore_MOI$Entrapment_Efficiency, virospore_MOI$MOI, ylim = c(0,100), xlim = c(0, 10),
      xlab = "MOI",
-     ylab = "Entrapment Efficiency (%)")
+     ylab = "Entrapment Efficiency (%)") 
+
+library(ggplot2)
+library(scales)
+# Plot using ggplot
+ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
+    geom_point() +
+    scale_x_log10(
+        limits = c(1e-5, 10),
+        breaks = 10^seq(-5, 1, by = 1),
+        labels = scales::label_scientific()
+    ) +
+    ylim(0, 100) +
+    labs(
+        x = "MOI",
+        y = "Entrapment Efficiency (%)"
+    )
 
 
 # Skipping ahead to see if data fits the assumptions of linear regression
 # First we need to look at the residuals (observed - predicted) to see if data meets assumptions
 # Residuals need to be normally distributed and of equal variance
-plot(fitreg)   
+plot(lm.model)   
 
 # Let's log10 transform and then check again 
 virospore_MOI$log10_Entrapment_Efficiency <- log10(virospore_MOI$Entrapment_Efficiency)
@@ -153,6 +176,8 @@ newdat <- newdat |>
     lwr = exp(fit - 1.96 * se.fit),
     upr = exp(fit + 1.96 * se.fit)
   )
+
+# Plot with gamma
 library(ggplot2)
 
 ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
@@ -226,7 +251,6 @@ ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency)) +
 ```{r}
 # testing for correlation?
 cor.test(virospore_MOI$MOI, virospore_MOI$Entrapment_Efficiency, method = "spearman")  # Use Spearman for non-linear relationships
-
 ```
 
 ```{r}
@@ -237,11 +261,13 @@ ggplot(virospore_MOI, aes(x = factor(MOI), y = Entrapment_Efficiency, fill = fac
   theme_minimal() +
   scale_y_log10() + # Log transform y axis
   labs(y = "Entrapment Efficiency (%)", x = "MOI") +
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  ylim(0, 100)
 
 ```
 5. Poisson model
 ```{r}
+library(dplyr)
 # Poisson relies on count data
 # Okay instead of using the entrapment efficiency as a percent, we probably shouldnt
 virospore_MOI$Entrapment_Efficiency_count <- (virospore_MOI$SPO1_copy_ul / virospore_MOI$Bacillus_copy_ul)
@@ -257,7 +283,7 @@ virospore_MOI <- virospore_MOI %>%
   )
 
 # Starting without any transformations
-p.model <- glm(Entrapment_Efficiency_count_adj ~ MOI, data = virospore_MOI, family = "poisson")
+p.model <- glm(Entrapment_Efficiency_count ~ MOI, data = virospore_MOI, family = "poisson")
 summary(p.model)
 plot(p.model)
 1 - pchisq(656.46, df = 19)
@@ -348,7 +374,12 @@ ggplot(virospore_MOI, aes(x = MOI, y = Entrapment_Efficiency)) +
     limits = c(1e-5, 10),
     breaks = 10^seq(-5, 1, by = 1),
     labels = scales::label_scientific()
-  )
+  ) +
+    ylim(0, 150) +
+    labs(
+        x = "MOI",
+        y = "Entrapment Efficiency (%)"
+    )
 
 # AIC and BIC for poisson
 AIC(p.model)

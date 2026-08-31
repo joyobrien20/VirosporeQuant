@@ -76,15 +76,36 @@ data$vPFU_cm2 <- data$vPFU_stock / (0.00785)
 5. Plot via box plot
 ```{r}
 library(ggplot2)
+library(ggpubr)
 data$Genotype <- factor(data$Genotype, levels = c("wildtype", "mutant"))
 # boxplot of vPFU_cm2 grouped by Genotype
+
 ggplot(data, aes(x = Genotype, y = vPFU_cm2, fill = Genotype)) +
   geom_boxplot() +
+  scale_fill_manual(values = rev(scales::hue_pal()(2))) +
   geom_jitter(width = 0.2, alpha = 0.7) + # add points
   labs(
     title = "",
     x = "Genotype",
     y = "vPFU per cm²"
+  ) 
+
+# Making the plot better
+ggplot(data, aes(x = Genotype, y = vPFU_cm2, fill = Genotype)) +
+  geom_boxplot() +
+  scale_fill_manual(values = rev(scales::hue_pal()(2))) +
+  geom_jitter(width = 0.2, alpha = 0.7) +
+  labs(
+    title = "",
+    x = "Genotype",
+    y = "Virospores per cm²"
+  ) +
+  geom_signif(
+    comparisons = list(c("wildtype", "mutant")),
+    annotations = "NS",
+    y_position = 2050000,
+    tip_length = 0.03,
+    textsize = 8
   )
 
 ```
