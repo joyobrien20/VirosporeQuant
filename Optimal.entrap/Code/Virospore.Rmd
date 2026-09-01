@@ -15,7 +15,8 @@ Virus entrapment dynamics
 ```{r setup}
 rm(list = ls())
 getwd()
-setwd("~/Desktop/Virospore/")
+#setwd("~/Desktop/Virospore/")
+setwd("~/GitHub/VirosporeQuant/Optimal.entrap")
 ```
 
 ## Load packages and functions
@@ -32,7 +33,7 @@ require("bbmle")
 ## Load data
 
 ```{r}
-viro <- read.csv("virospore.csv", header = TRUE, sep = ",")
+viro <- read.csv("~/GitHub/VirosporeQuant/Optimal.entrap/Data/virospore.csv", header = TRUE, sep = ",")
 
 # Subset data for MOI = 0.1
 viro.sub <- viro %>%
@@ -239,7 +240,7 @@ window
 ## Plot data and fit3 predicted values
 
 ```{r}
-png(filename="~/Desktop/Virospore/fit3_moi0.1.png",
+png(filename="~/GitHub/VirosporeQuant/Optimal.entrap/Figures/fit3_moi0.1.png",
     width = 1200, height = 1200, res = 96*2)
 
 plot.new()
@@ -339,8 +340,183 @@ dev.off()
 graphics.off()
 
 # Show plot
-img <- readPNG("~/Desktop/Virospore/fit3_moi0.1.png")
+img <- readPNG("~/GitHub/VirosporeQuant/Optimal.entrap/Figures/fit3_moi0.1.png")
 grid.raster(img)
 ```
 
+# Adding in a null model; there is no effect of time or MOI and every observation is explained by one global mean (using the moi = 0.1 data)
+```{r}
+# Starting values for null model
+M <- mean(viro.sub$y, na.rm = TRUE)
+Z <- sd(viro.sub$y, na.rm = TRUE)
+
+fit_null <- mle2(
+  y ~ dnorm(
+    mean = m,
+    sd = z
+  ),
+  start = list(
+    m = M,
+    z = Z
+  ),
+  method = "L-BFGS-B",
+  lower = c(
+    m = -Inf,
+    z = 0.001
+  ),
+  upper = c(
+    m = Inf,
+    z = Inf
+  ),
+  data = viro.sub
+)
+summary(fit_null)
+```
+
+## Compare models again, this time adding in the null
+
+```{r}
+# Compare models using AIC
+AIC(fit1, fit2, fit3, fit_null)
+
+# Calculate delta AIC
+aic <- AIC(fit1, fit2, fit3, fit_null)
+
+aic$deltaAIC <- aic$AIC - min(aic$AIC)
+
+# Calculate AIC weights
+aic$weight <- exp(-0.5 * aic$deltaAIC) /
+              sum(exp(-0.5 * aic$deltaAIC))
+
+aic
+```
+## Extract coefficients from null model moi = 0.1
+```{r}
+null <- coef(fit_null)
+
+null_summary <- data.frame(
+  Parameter = c(
+    "Global mean",
+    "Residual SD"
+  ),
+  Estimate = c(
+    null["m"],
+    null["z"]
+  )
+)
+
+null_summary
+```
+## Plot null model moi = 0.1
+```{r}
+png(filename="~/GitHub/VirosporeQuant/Optimal.entrap/Figures/null_model_moi01.png",
+    width = 1200, height = 1200, res = 96*2)
+
+plot.new()
+par(mar = c(7, 7, 5, 7))
+
+plot(viro.sub$time, viro.sub$virospores.ml,
+     xlim = c(-1, 26),
+     ylim = c(1e3, 1e12),
+     type = "p",
+     log = "y",
+     pch = 22,
+     bg = "red",
+     col = "red",
+     cex = 2,
+     ylab = "",
+     xlab = "",
+     las = 1,
+     lwd = 2,
+     yaxt = "n",
+     xaxt = "n")
+
+box(lwd = 2)
+
+# Add y-axis ticks and labels
+axis(side = 2,
+     lwd.ticks = 2,
+     las = 1,
+     cex.axis = 1.25,
+     at = 10^(3:12),
+     labels = expression(
+       10^3, 10^4, 10^5, 10^6, 10^7,
+       10^8, 10^9, 10^10, 10^11, 10^12
+     ))
+
+axis(side = 4,
+     labels = FALSE,
+     lwd.ticks = 2,
+     at = 10^(3:12))
+
+# Add x-axis ticks and labels
+axis(side = 1,
+     lwd.ticks = 2,
+     cex.axis = 1.25,
+     las = 1,
+     mgp = c(3, 1, 0),
+     labels = c(0, 5, 10, 15, 20, 25),
+     at = c(0, 5, 10, 15, 20, 25))
+
+axis(side = 3,
+     labels = FALSE,
+     lwd.ticks = 2,
+     at = c(0, 5, 10, 15, 20, 25))
+
+# Axis titles
+mtext("Infection time (h)",
+      side = 1,
+      outer = TRUE,
+      cex = 1.5,
+      line = -4,
+      adj = 0.5)
+
+mtext(expression(paste("Virospores (mL"^{-1}, ")")),
+      side = 2,
+      outer = TRUE,
+      cex = 1.5,
+      line = -3.5,
+      adj = 0.55)
+
+# Extract null coefficients
+p <- coef(null_summary)
+
+x.pred <- seq(
+  min(viro.sub$time),
+  max(viro.sub$time),
+  length.out = 200
+)
+
+# Predicted log10 virospore concentration
+y.pred.log <- p["b0"] +
+  p["a"] *
+  ifelse(
+    x.pred <= p["mu"],
+    exp(-(x.pred - p["mu"])^2 /
+          (2 * p["sigmaL"]^2)),
+    exp(-(x.pred - p["mu"])^2 /
+          (2 * p["sigmaR"]^2))
+  )
+
+m_null <- coef(fit_null)["m"]
+
+y.pred <- rep(10^m_null, length(x.pred))
+
+lines(
+  x.pred,
+  y.pred,
+  col = "red",
+  lty = 1,
+  lwd = 3
+)
+
+# Close plot device
+dev.off()
+graphics.off()
+
+# Show plot
+img <- readPNG("~/GitHub/VirosporeQuant/Optimal.entrap/Figures/null_model_moi01.png")
+grid.raster(img)
+```
+```
 
